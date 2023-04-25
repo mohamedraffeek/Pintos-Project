@@ -1,9 +1,22 @@
 #include "threads/thread.h"
+//#include "thread.h"
 #include <debug.h>
 #include <stddef.h>
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+//#include "flags.h"
+//#include "interrupt.h"
+//#include "intr-stubs.h"
+//#include "palloc.h"
+//#include "switch.h"
+//#include "synch.h"
+//#include "vaddr.h"
+//---------------------Modified 1--------------------------
+//#include "fixed_point.h"
+//#include "devices/timer.h"
+//#include "load_avg.h"
+//---------------------End Modified 1--------------------------
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -11,6 +24,11 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+
+#include <threads/load_avg.h>
+#include "threads/fixed_point.c"
+#include <devices/timer.h>
+
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -76,6 +94,11 @@ static tid_t allocate_tid (void);
 static bool cmp_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 /* ----------------------End Modified---------------------- */
 
+
+// ----------------------Modified 1-------------------------
+struct load_avg_real loadAvg;
+// ---------------------End Modified 1---------------------
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -103,6 +126,14 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+  //-----------------------------Modified 1--------------------------
+    /// in case of advanced scheduling
+  if (thread_mlfqs) {
+      initial_thread->niceValue.niceValue = 0;  
+      initial_thread->recentCpu.recentCpu = 0;  
+      loadAvg.loadAvg = 0;  
+  }
+    //---------------------------End Modified 1--------------------------
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -116,8 +147,12 @@ thread_start (void)
   thread_create ("idle", PRI_MIN, idle, &idle_started);
 
   /* Start preemptive thread scheduling. */
-  intr_enable ();
-
+ 
+  //-------------------------------Modified 1----------------------------------
+    /* Initialize load_avg. */
+    loadAvg.loadAvg = 0;
+  //-------------------------------End Modified 1------------------------------
+   intr_enable ();
   /* Wait for the idle thread to initialize idle_thread. */
   sema_down (&idle_started);
 }
@@ -138,6 +173,16 @@ thread_tick (void)
 #endif
   else
     kernel_ticks++;
+    //---------------------------Modified 1-----------------------------
+    if (thread_mlfqs)
+    {
+        // may need to disable interrupts...
+        // enum intr_level old_level = intr_disable();
+        updatePriorities(timer_ticks(), 100, thread_current());
+        //re-enable interrupts
+        //intr_set_level (old_level);
+    }
+    //---------------------------End Modified 1---------------------------
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -187,7 +232,16 @@ thread_create (const char *name, int priority,
 
   /* Initialize thread. */
   init_thread (t, name, priority);
-  
+
+  //-----------------------------------------Modified 1-------------------------------
+  //inheritance of nice and recent cpu values from current thread..
+  if (thread_mlfqs)
+  {
+      t->niceValue.niceValue = thread_current()->niceValue.niceValue;
+      t->recentCpu.recentCpu = thread_current()->recentCpu.recentCpu;
+  }
+  //------------------------------------- End Modified 1------------------------------
+
   tid = t->tid = allocate_tid ();
 
   /* Stack frame for kernel_thread(). */
@@ -256,12 +310,11 @@ thread_unblock (struct thread *t)
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
 
-  /* ------------------------Modified------------------------ */
-  list_insert_ordered(&ready_list, &t -> elem, cmp_priority_ready, NULL);
- 
 
+  /* ------------------------Modified ------------------------ */
+  list_insert_ordered(&ready_list, &t -> elem, cmp_priority, NULL);
+  /* ----------------------End Modified ---------------------- */
 
-  /* ----------------------End Modified---------------------- */
   
   t->status = THREAD_READY;
   intr_set_level (old_level);
@@ -328,7 +381,6 @@ cmp_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNU
     struct thread *s2 = list_entry(b, struct thread, elem);
     return s1 -> priority > s2 -> priority;
 }
-
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
 void
@@ -340,8 +392,10 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_insert_ordered(&ready_list, &cur -> elem, cmp_priority_ready, NULL);
+
+  if (cur != idle_thread)
+    list_insert_ordered(&ready_list, &cur -> elem, cmp_priority, NULL);
+
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -402,37 +456,52 @@ thread_get_priority (void)
 {
   return thread_current ()->priority;
 }
-
+//------------------------------Modified 1---------------------------
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+ thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+    enum intr_level old_level = intr_disable();
+    thread_current()->niceValue.niceValue = nice;
+    int PRI_MaxFP = convertToFP(PRI_MAX);
+    int recCpu = (thread_current()->recentCpu.recentCpu) / 4;
+    int niceValueFP = FirstFPSecondINT_thenMultiply(thread_current()->niceValue.niceValue, 2);
+    thread_current()->priority = PRI_MaxFP - recCpu - niceValueFP;
+    thread_current()->priority = convertTOInt(thread_current()->priority);
+    if(thread_current()->priority < 0)
+        thread_current()->priority = PRI_MIN;
+    else if(thread_current()->priority > PRI_MAX)
+        thread_current()->priority = PRI_MAX;
+
+    if(!list_empty(&ready_list))
+    {
+        struct thread *max_priority_thread = list_entry(list_begin(&ready_list),struct thread, elem);
+        if(max_priority_thread->priority >= thread_current()->priority)
+            thread_yield();
+    }
+    intr_set_level(old_level);
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->niceValue.niceValue;
 }
 
 /* Returns 100 times the system load average. */
-int
-thread_get_load_avg (void) 
+int thread_get_load_avg(void)
 {
-  /* Not yet implemented. */
-  return 0;
+    return convertTOInt(loadAvg.loadAvg * 100);
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+    return convertTOInt(thread_current()->recentCpu.recentCpu * 100);
 }
+//---------------------------End Modified 1-----------------------
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -720,3 +789,59 @@ cmp_priority_cond(const struct list_elem *a, const struct list_elem *b, void *au
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+//-------------------------Modified 1----------------------------------
+void updatePriorities(int64_t ticks, int64_t freq, struct thread *t)
+{
+    // updated every tick
+    if(t != idle_thread)
+        t->recentCpu.recentCpu = makeFirstFP_thenADD(1, t->recentCpu.recentCpu);
+    //updated every second
+    if(ticks % freq == 0)
+    {
+        int loadAvgFrac = multiplyTwoFP(makeFirstFP_thenDivide(59, 60), loadAvg.loadAvg);
+        int s = list_size(&ready_list);
+        if (t != idle_thread)
+            s += 1;
+        int readyThreadfrac = makeFirstFP_thenDivide(s, 60);
+        loadAvg.loadAvg = loadAvgFrac + readyThreadfrac;
+
+        for (struct list_elem *iter = list_begin(&all_list); iter != list_end(&all_list); iter = list_next(iter))
+        {
+            struct thread *iter_over = list_entry(iter, struct thread, allelem);
+            if(iter_over != idle_thread)
+            {
+                loadAvgFrac = divideTwoFP(FirstFPSecondINT_thenMultiply(2, loadAvg.loadAvg),
+                                          makeFirstFP_thenADD(1, FirstFPSecondINT_thenMultiply(2, loadAvg.loadAvg)));
+                iter_over->recentCpu.recentCpu = makeFirstFP_thenADD(iter_over->niceValue.niceValue,
+                                                                     multiplyTwoFP(loadAvgFrac, iter_over->recentCpu.recentCpu));
+                iter_over->priority = makeFirstFP_thenADD(FirstFPSecondINT_thenMultiply(-2, iter_over->niceValue.niceValue),
+                                                          makeFirstFP_thenADD(PRI_MAX, FirstFPSecondINT_thenDivide(iter_over->recentCpu.recentCpu, -4)));
+                iter_over->priority = convertTOInt(iter_over->priority);
+
+                if (iter_over->priority < 0)
+                    iter_over->priority = PRI_MIN;
+                else if (iter_over->priority > 63)
+                    iter_over->priority = PRI_MAX;
+            }
+        }
+    }
+    else if (ticks % 4 == 0 && t != idle_thread) // each four tick recalculate
+    {
+        for (struct list_elem *iter = list_begin(&all_list); iter != list_end(&all_list); iter = list_next(iter))
+        {
+            struct thread *iter_over = list_entry(iter, struct thread, allelem);
+            iter_over->priority = makeFirstFP_thenADD(FirstFPSecondINT_thenMultiply(-2, iter_over->niceValue.niceValue),
+                                                      makeFirstFP_thenADD(PRI_MAX, FirstFPSecondINT_thenDivide(iter_over->recentCpu.recentCpu, -4)));
+            iter_over->priority = convertTOInt(iter_over->priority);
+            if (iter_over->priority < 0)
+                iter_over->priority = PRI_MIN;
+            else if (iter_over->priority > 63)
+                iter_over->priority = PRI_MAX;
+        }
+        list_sort(&ready_list, &cmp_priority, NULL);
+    }
+}
+
+
+//-----------------------------End Modified 1-----------------------------------
