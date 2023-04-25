@@ -59,6 +59,7 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 
+
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
@@ -169,7 +170,7 @@ thread_print_stats (void)
 tid_t
 thread_create (const char *name, int priority,
                thread_func *function, void *aux) 
-{
+{  
   struct thread *t;
   struct kernel_thread_frame *kf;
   struct switch_entry_frame *ef;
@@ -177,6 +178,7 @@ thread_create (const char *name, int priority,
   tid_t tid;
 
   ASSERT (function != NULL);
+ 
 
   /* Allocate thread. */
   t = palloc_get_page (PAL_ZERO);
@@ -185,6 +187,7 @@ thread_create (const char *name, int priority,
 
   /* Initialize thread. */
   init_thread (t, name, priority);
+  
   tid = t->tid = allocate_tid ();
 
   /* Stack frame for kernel_thread(). */
@@ -206,12 +209,14 @@ thread_create (const char *name, int priority,
   thread_unblock (t);
 
 /* ------------------------Modified------------------------ */
+/* ------------------------Modified Ahmed Ali------------------------ */
 
   /* Compare the priorities of the running thread and the created thread.
      Yield the CPU if the newly arriving thread has higher priority. */
   struct thread *cur = thread_current();
   if(priority > cur->priority) thread_yield();
 
+/* ----------------------- -end Modified Ahmed Ali------------------------ */
 /* ----------------------End Modified---------------------- */
 
   return tid;
@@ -252,7 +257,10 @@ thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
 
   /* ------------------------Modified------------------------ */
-  list_insert_ordered(&ready_list, &t -> elem, cmp_priority, NULL);
+  list_insert_ordered(&ready_list, &t -> elem, cmp_priority_ready, NULL);
+ 
+
+
   /* ----------------------End Modified---------------------- */
   
   t->status = THREAD_READY;
@@ -333,7 +341,7 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_insert_ordered(&ready_list, &cur -> elem, cmp_priority, NULL);
+    list_insert_ordered(&ready_list, &cur -> elem, cmp_priority_ready, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -365,14 +373,23 @@ void
 thread_set_priority (int new_priority) 
 {
   enum intr_level old_level = intr_disable();
-  thread_current ()->priority = new_priority;
+  thread_current ()->basic_priority = new_priority;
+  
+    change_virtual_priority(thread_current ());
+
+
+  
+
   if(!list_empty(&ready_list)){
-      list_sort(&ready_list, cmp_priority, NULL);
+      list_sort(&ready_list, cmp_priority_ready, NULL);
 
       /* Check whether the current thread must yield the CPU or not */
       struct list_elem *front_element = list_front(&ready_list);
       struct thread *front_thread = list_entry(front_element, struct thread, elem);
-      if(front_thread->priority > new_priority) thread_yield();
+
+      
+
+      if(front_thread-> priority > thread_current ()->priority) thread_yield();
   }
   intr_set_level(old_level);
 }
@@ -503,6 +520,14 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->basic_priority=priority;
+  /*--------Modified Ahmed Ali*/
+  
+  
+  list_init(&(t ->locks));
+  t->waitlock=NULL;
+  
+  /*---------------End Modified Ahmed Ali------------*/
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -620,6 +645,78 @@ allocate_tid (void)
   return tid;
 }
 
+
+/* ------------------------Modified Ahmed Ali------------------------ */
+struct list *get_ready_list(){
+  return &ready_list;
+}
+
+
+
+
+void change_virtual_priority (struct thread * _holder){
+  
+  if(_holder==NULL)
+  {
+    list_sort(&ready_list,cmp_priority_ready,NULL);
+   
+  }
+  else{
+  int max =_holder->basic_priority;
+  for(struct list_elem* iter = list_begin(&(_holder->locks));
+iter != list_end(&(_holder->locks));
+iter = list_next((iter))){
+
+  if(list_entry(iter,struct lock,lockelem) ->Max_virtual_priority>max)
+  max=list_entry(iter,struct lock,lockelem)  ->Max_virtual_priority ;
+}
+
+_holder->priority=max;
+
+
+if(_holder->waitlock!=NULL){
+  if(_holder->priority>_holder->waitlock->Max_virtual_priority)
+{_holder->waitlock->Max_virtual_priority=_holder->priority;
+list_sort(&(_holder->waitlock->semaphore.waiters),cmp_priority_sema,NULL);}
+
+change_virtual_priority (_holder->waitlock->holder);}
+else
+change_virtual_priority (NULL);
+
+
+
+
+
+}
+
+
+
+}
+
+
+ bool
+cmp_priority_ready(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+    struct thread *s1 = list_entry(a, struct thread, elem);
+    struct thread *s2 = list_entry(b, struct thread, elem);
+    return s1 ->priority > s2 -> priority;
+}bool
+cmp_priority_sema(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+    struct thread *s1 = list_entry(a, struct thread, elemsem);
+    struct thread *s2 = list_entry(b, struct thread, elemsem);
+    return s1 ->priority > s2 -> priority;
+}
+bool
+cmp_priority_cond(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+    struct semaphore_elem  *s1 = list_entry(a, struct semaphore_elem, elem);
+    struct semaphore_elem *s2 = list_entry(b, struct semaphore_elem, elem);
+    return s1 ->priority > s2 -> priority;
+}
+
+
+
+
+/* ----------------------End Modified Ahmed Ali---------------------- */
+
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);

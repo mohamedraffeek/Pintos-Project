@@ -88,6 +88,13 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    /*-----------Modified.Ahmed Ali---------*/
+    int basic_priority;
+    struct list locks;    /*list of locks that the thread is the holder in it*/
+    struct lock * waitlock; /*the lock that the thread blocked at*/
+    struct list_elem elemsem;
+    /*-----------End Modified.Ahmed Ali---------*/
+
     struct list_elem allelem;           /* List element for all threads list. */
 
 /* ------------------------Modified------------------------ */
@@ -122,6 +129,15 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
+
+/* ------------------------Modified Ahmed Ali------------------------ */
+
+void change_virtual_priority (struct thread *);
+ bool cmp_priority_ready(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+ bool cmp_priority_sema(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+struct list *get_ready_list();
+bool cmp_priority_cond(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+/* ----------------------End Modified Ahmed Ali---------------------- */
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
