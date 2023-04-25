@@ -4,6 +4,8 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "nice.h"
+#include "recent_cpu.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -89,19 +91,22 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
-
+    //struct list_elem readyelem;
 /* ------------------------Modified------------------------ */
     int64_t wakeup_ticks;               /* Wakeup ticks for unblocking the thread */
 /* ----------------------End Modified---------------------- */
-
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+
+    /* ------------------------Modified 1------------------------ */
+    struct recent_cpu_real recentCpu;
+    struct nice_value_real niceValue;
+    /* ----------------------End Modified 1---------------------- */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
-
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
@@ -109,7 +114,8 @@ struct thread
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
-extern bool thread_mlfqs;
+extern bool
+thread_mlfqs;
 
 void thread_init (void);
 void thread_start (void);
@@ -136,7 +142,10 @@ void thread_foreach (thread_action_func *, void *);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
-
+// ------------------------------ Modified 1---------------------------------
+//to set priority of each thread in adv. scheduling;
+void updatePriorities(int64_t ticks, int64_t freq, struct thread *t);
+// ------------------------------End Modified 1---------------------------------
 int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
