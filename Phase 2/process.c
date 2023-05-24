@@ -21,6 +21,12 @@
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
+
+// Phase 2 - Raffeek
+/* Starts a new thread running a user program loaded from
+   FILENAME.  The new thread may be scheduled (and may even exit)
+   before process_execute() returns.  Returns the new process's
+   thread id, or TID_ERROR if the thread cannot be created. */
 tid_t
 process_execute (const char *file_name) 
 {
@@ -200,6 +206,7 @@ process_exit (void)
       pagedir_destroy (pd);
     }
 }
+// end
 
 /* Sets up the CPU for running user code in the current
    thread.
@@ -280,7 +287,9 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
+// Phase 2 - Raffeek
 static bool setup_stack (void **esp, const char *file_name);
+// end
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -306,6 +315,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  // Phase 2 - Raffeek
   /* Tokenize the file name to get only the first token and pass it to the 
     filesys_open function */
   char *real_name, *args;
@@ -325,6 +335,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   /* Deny writing to files to pass rox tests */
   t->file = file;
   file_deny_write(file);
+  // end
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -398,9 +409,11 @@ load (const char *file_name, void (**eip) (void), void **esp)
         }
     }
  
+  // Phase 2 - Raffeek
   /* Set up stack. */
   if (!setup_stack (esp, file_name))
     goto done;
+  // end
 
   palloc_free_page(real_name);
  
@@ -537,7 +550,7 @@ setup_stack (void **esp, const char *file_name)
       if (success){
         *esp = PHYS_BASE;
 
-        // Phase 2 - Stack Setup
+        // Phase 2 - Stack Setup - Raffeek
         char *token = file_name, *args;
         int argc = 0;
         int *argv = calloc(30, sizeof(int)); // 30 is the maximum number of arguments allowed  
@@ -590,6 +603,7 @@ setup_stack (void **esp, const char *file_name)
         memcpy(*esp, &fakeReturn, sizeof(void*)); 
 
         free(argv); // free the memory occupied by the arguments array 
+        // end
       }
       else
         palloc_free_page (kpage);
