@@ -13,7 +13,17 @@
 #include <stdlib.h>
 #include "syscall.h"
 #include "threads/synch.h"
-static struct lock lock;
+static struct lock;
+
+//to use struct file using forward declaration
+//definition of struct open_file
+
+struct open_file
+{
+	int fd;
+	struct file* ptr;
+	struct list_elem elem;
+};
 
 void syscall_init(void);
 void validate_void_ptr(const void *ptr);
@@ -31,7 +41,7 @@ int sys_read(int fd, void *buffer, int size);
 void sys_seek(int fd, unsigned position);
 unsigned sys_tell(int fd);
 void sys_close(int fd);
-struct file *get_file(int fd);
+struct open_file *get_file(int fd);
 void remove_file(int fd);
 
 static void syscall_handler (struct intr_frame *);
@@ -234,7 +244,7 @@ int sys_read(int fd, void *buffer, int length){
   }
   else if (fd == 1){ //output stream
     //negative area cant happened cuz the validation that happened before
-    printf("negative area : output stream in read call");
+    //printf("negative area : output stream in read call");
     return -1 ;
   }
   else {
@@ -261,7 +271,7 @@ int sys_write(int fd, void *buffer, int length){
 	}
 	else if (fd == 0){ //input stream
     //negative area cant happened cuz the validation that happened before
-    printf("negative area : input stream in putput call");
+    //printf("negative area : input stream in putput call");
     return -1 ;
   }
   else{ //// writing normally to an open file
@@ -298,7 +308,7 @@ unsigned sys_tell(int fd){
 }
 
 int sys_open(char *file_name){	
-  struct file* openFile = palloc_get_page(0);
+  struct open_file* openFile = palloc_get_page(0);
   if (openFile == NULL) 
   {
     palloc_free_page(openFile);
@@ -317,7 +327,7 @@ int sys_open(char *file_name){
 }
 
 void sys_close(int fd){
-	struct file *my_file = get_file(fd);
+	struct open_file *my_file = get_file(fd);
 	if (my_file == NULL) return;
 
   lock_acquire(&lock);
@@ -327,7 +337,7 @@ void sys_close(int fd){
   palloc_free_page(my_file);
 }
 
-struct file* get_file(int fd){
+struct open_file* get_file(int fd){
 
     struct thread* t = thread_current();
 
@@ -335,7 +345,7 @@ struct file* get_file(int fd){
     for (struct list_elem* e = list_begin (&t->files_list); e != list_end (&t->files_list);
     e = list_next (e))
     {
-      struct file* opened_file = list_entry (e, struct file, elem);
+      struct open_file* opened_file = list_entry (e, struct open_file, elem);
       if (opened_file->fd == fd)
       {
         return opened_file;
