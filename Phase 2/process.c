@@ -23,6 +23,19 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
 
 // Phase 2 - Raffeek
+
+#define USER_STACK_LIMIT 0x1000
+
+// Forward declaration of struct file
+struct file;
+
+// Definition of struct open_file
+struct open_file {
+   int fd;
+   struct file* ptr;
+   struct list_elem elem;
+};
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -601,6 +614,12 @@ setup_stack (void **esp, const char *file_name)
         void *fakeReturn = 0;
         *esp -= sizeof(void*); 
         memcpy(*esp, &fakeReturn, sizeof(void*)); 
+
+        /* Check for stack overflow */
+        if ((uint32_t) esp < ((uint8_t *) PHYS_BASE) - USER_STACK_LIMIT)
+            {
+              success = false;
+            }
 
         free(argv); // free the memory occupied by the arguments array 
         // end
