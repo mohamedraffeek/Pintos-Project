@@ -13,18 +13,21 @@
 #include <stdlib.h>
 #include "syscall.h"
 #include "threads/synch.h"
+
+//static lock to use in "Denying Writes to Executables"
 static struct lock lock;
 
-// Forward declaration of struct file
-struct file;
-
-// Definition of struct open_file
-struct open_file {
-   int fd;
-   struct file* ptr;
-   struct list_elem elem;
+//to use struct file using forward declaration
+//definition of struct open_file
+// already implemented in thread.h
+/*
+struct open_file
+{
+	int fd;
+	struct file* ptr;
+	struct list_elem elem;
 };
-
+*/
 void syscall_init(void);
 void validate_void_ptr(const void *ptr);
 static void syscall_handler(struct intr_frame *);
@@ -43,7 +46,6 @@ unsigned sys_tell(int fd);
 void sys_close(int fd);
 struct open_file *get_file(int fd);
 void remove_file(int fd);
-static int generate_fd();
 
 static void syscall_handler (struct intr_frame *);
 
@@ -52,7 +54,7 @@ void syscall_init (void) {
   lock_init(&lock);
 }
 
-// check if the validation of the pointer
+// check the validation of the pointer
 void validate_void_ptr(const void* pt){
   if (pt == NULL || !is_user_vaddr(pt) || pagedir_get_page(thread_current()->pagedir, pt) == NULL)
     sys_exit(-1);
@@ -61,6 +63,7 @@ void validate_void_ptr(const void* pt){
 
 static void
 syscall_handler (struct intr_frame *f) {
+  printf ("system call!\n");
   
   int fd;
   void *buffer;
@@ -219,13 +222,13 @@ bool sys_remove(char *file){
 }
 
 int file_size(int fd){
-	struct file *file = get_file(fd)->ptr;
-	
-  if (file == NULL)
+	struct file* my_file = get_file(fd)->ptr;
+
+  if (my_file == NULL)
 		return -1;
 	
 	lock_acquire(&lock);
-	int fileSize = file_length(file);
+	int fileSize = file_length(my_file);
 	lock_release(&lock);
 	return fileSize;
 }
@@ -244,13 +247,15 @@ int sys_read(int fd, void *buffer, int length){
   }
   else if (fd == 1){ //output stream
     //negative area cant happened cuz the validation that happened before
-    // printf("negative area : output stream in read call");
-    return -1;
+    //printf("negative area : output stream in read call");
+    return -1 ;
   }
   else {
     struct file* my_file = get_file(fd)->ptr;
 
     if (my_file == NULL){return -1;}
+
+    //Returns the number of bytes actually read
 
     int res;
     lock_acquire(&lock);
@@ -271,8 +276,8 @@ int sys_write(int fd, void *buffer, int length){
 	}
 	else if (fd == 0){ //input stream
     //negative area cant happened cuz the validation that happened before
-    // printf("negative area : input stream in putput call");
-    return -1;
+    //printf("negative area : input stream in putput call");
+    return -1 ;
   }
   else{ //// writing normally to an open file
 		
@@ -287,6 +292,7 @@ int sys_write(int fd, void *buffer, int length){
 	return size_written;
 }
 
+//Changes the next byte to be read or written in open file fd to position, expressed in bytes from the beginning of the file
 void sys_seek(int fd, unsigned position){
 	struct file *my_file = get_file(fd)->ptr;
 	if (my_file == NULL || position < 0) return;
@@ -296,18 +302,20 @@ void sys_seek(int fd, unsigned position){
 	lock_release(&lock);
 }
 
-// get the pos of next file to be read or written in an open file
+// Returns the position of the next byte to be read or written in open file fd, expressed in bytes from the beginning of the file.
 unsigned sys_tell(int fd){
 	struct file *my_file = get_file(fd)->ptr;
 	if (my_file == NULL) return -1;
 
 	lock_acquire(&lock);
-	int pos = (int)file_tell(fd);
+	int pos = (int)file_tell(my_file);
 	lock_release(&lock);
 	return pos;
 }
 
 int sys_open(char *file_name){	
+
+  //try to allocates memeory for open_file struct 
   struct open_file* openFile = palloc_get_page(0);
   if (openFile == NULL) 
   {
@@ -340,7 +348,6 @@ void sys_close(int fd){
 struct open_file* get_file(int fd){
 
     struct thread* t = thread_current();
-    struct open_file* my_file = NULL;
 
     // go throught open files in that thread and return fd if founded
     for (struct list_elem* e = list_begin (&t->files_list); e != list_end (&t->files_list);
