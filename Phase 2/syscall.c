@@ -53,6 +53,11 @@ static void
 syscall_handler (struct intr_frame *f) {
   printf ("system call!\n");
   
+  int fd;
+  void *buffer;
+  int size;
+  char *file;
+
   //first get Int from the stack
   void *esp = f->esp;
 	switch (*(int *)esp){
@@ -89,7 +94,6 @@ syscall_handler (struct intr_frame *f) {
     case SYS_CREATE:
 		  validate_void_ptr(esp + 4);
 		  validate_void_ptr(esp + 8);
-      char *file;
 		  file = (char *)(*((uint32_t *)esp + 1));
 		  unsigned init_size = *((unsigned *)esp + 2);
       //check if the file doesnot exist
@@ -100,7 +104,6 @@ syscall_handler (struct intr_frame *f) {
   
     case SYS_REMOVE:
 		  validate_void_ptr(esp + 4);
-      char *file;
 		  file = (char *)(*((uint32_t *)esp + 1));
       //check if the file doesnot exist
       if (file == NULL) 
@@ -119,7 +122,7 @@ syscall_handler (struct intr_frame *f) {
 
     case SYS_FILESIZE:
 		  validate_void_ptr(esp + 4);
-		  int fd = *((uint32_t *)esp + 1);
+		  fd = *((uint32_t *)esp + 1);
 		  f->eax = file_size(fd);
 	    break;
  
@@ -128,9 +131,9 @@ syscall_handler (struct intr_frame *f) {
 		  validate_void_ptr(esp + 8);
 		  validate_void_ptr(esp + 12);
 
-      int fd = *((int*)f->esp + 1);
-      void *buffer = (void*)(*((int*)f->esp + 2));
-      int size = *((int*)f->esp + 3);
+      fd = *((int*)f->esp + 1);
+      buffer = (void*)(*((int*)f->esp + 2));
+      size = *((int*)f->esp + 3);
 
       validate_void_ptr(buffer+size);
 
@@ -142,9 +145,9 @@ syscall_handler (struct intr_frame *f) {
 		  validate_void_ptr(esp + 8);
 		  validate_void_ptr(esp + 12);
 		
-      int fd = *((uint32_t *)esp + 1);
-		  void *buffer = (void *)(*((uint32_t *)esp + 2));
-		  int size = *((unsigned *)esp + 3);
+      fd = *((uint32_t *)esp + 1);
+		  buffer = (void *)(*((uint32_t *)esp + 2));
+		  size = *((unsigned *)esp + 3);
       if(buffer==NULL) sys_exit(-1);
 
 		  f->eax = sys_write(fd, buffer, size);
@@ -153,20 +156,20 @@ syscall_handler (struct intr_frame *f) {
     case SYS_SEEK:
 		  validate_void_ptr(esp + 4);
 		  validate_void_ptr(esp + 8);
-		  int fd = *((uint32_t *)esp + 1);
+		  fd = *((uint32_t *)esp + 1);
 		  int pos = (*((unsigned *)esp + 2));
 		  sys_seek(fd, pos);
 	    break;
 
     case SYS_TELL:
       validate_void_ptr(esp + 4);
-      int fd = *((uint32_t *)esp + 1);
+      fd = *((uint32_t *)esp + 1);
       f->eax = sys_tell(fd);
       break;
 
     case SYS_CLOSE:
       validate_void_ptr(esp + 4);
-      int fd = *((uint32_t *)esp + 1);
+      fd = *((uint32_t *)esp + 1);
       sys_close(fd);
       break;
   
@@ -304,7 +307,7 @@ int sys_open(char *file_name){
   lock_acquire(&lock);
   openFile->ptr = filesys_open(file_name);
   lock_release(&lock);
-  
+
   if (openFile->ptr == NULL) return -1;
   
   openFile->fd = ++thread_current()->fileDir;
@@ -330,12 +333,13 @@ struct file* get_file(int fd){
 
     // go throught open files in that thread and return fd if founded
     for (struct list_elem* e = list_begin (&t->filesList); e != list_end (&t->filesList);
-    e = list_next (e)){
-      
+    e = list_next (e))
+    {
       struct file* opened_file = list_entry (e, struct file, elem);
       if (opened_file->fd == fd)
+      {
         return opened_file;
-      
+      }
     }
     return NULL;
 }
