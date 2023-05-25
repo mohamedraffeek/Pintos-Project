@@ -13,18 +13,18 @@
 #include <stdlib.h>
 #include "syscall.h"
 #include "threads/synch.h"
-static struct lock;
+static struct lock lock;
 
 //to use struct file using forward declaration
 //definition of struct open_file
-
+/*
 struct open_file
 {
 	int fd;
 	struct file* ptr;
 	struct list_elem elem;
 };
-
+*/
 void syscall_init(void);
 void validate_void_ptr(const void *ptr);
 static void syscall_handler(struct intr_frame *);
