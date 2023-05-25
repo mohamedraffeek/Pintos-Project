@@ -33,7 +33,6 @@ unsigned sys_tell(int fd);
 void sys_close(int fd);
 struct file *get_file(int fd);
 void remove_file(int fd);
-static int generate_fd();
 
 static void syscall_handler (struct intr_frame *);
 
@@ -185,7 +184,7 @@ void sys_exit(int status){
 
 	struct thread *cur = thread_current()->parent;
 	printf("%s: exit(%d)\n", thread_current()->name, status);
-	if(cur) cur->childStatus = status;
+	if(cur) cur->child_status = status;
 	thread_exit();
 }
 
@@ -210,13 +209,13 @@ bool sys_remove(char *file){
 }
 
 int file_size(int fd){
-	struct file *file = get_file(fd)->ptr;
-	
-  if (file == NULL)
+	struct file* my_file = get_file(fd)->ptr;
+
+  if (my_file == NULL)
 		return -1;
 	
 	lock_acquire(&lock);
-	int fileSize = file_length(file);
+	int fileSize = file_length(my_file);
 	lock_release(&lock);
 	return fileSize;
 }
@@ -236,6 +235,7 @@ int sys_read(int fd, void *buffer, int length){
   else if (fd == 1){ //output stream
     //negative area cant happened cuz the validation that happened before
     printf("negative area : output stream in read call");
+    return -1 ;
   }
   else {
     struct file* my_file = get_file(fd)->ptr;
@@ -262,6 +262,7 @@ int sys_write(int fd, void *buffer, int length){
 	else if (fd == 0){ //input stream
     //negative area cant happened cuz the validation that happened before
     printf("negative area : input stream in putput call");
+    return -1 ;
   }
   else{ //// writing normally to an open file
 		
@@ -291,7 +292,7 @@ unsigned sys_tell(int fd){
 	if (my_file == NULL) return -1;
 
 	lock_acquire(&lock);
-	int pos = (int)file_tell(ft);
+	int pos = (int)file_tell(my_file);
 	lock_release(&lock);
 	return pos;
 }
@@ -311,7 +312,7 @@ int sys_open(char *file_name){
   if (openFile->ptr == NULL) return -1;
   
   openFile->fd = ++thread_current()->fileDir;
-  list_push_back(&thread_current()->filesList,&openFile->elem);
+  list_push_back(&thread_current()->files_list,&openFile->elem);
   return openFile->fd;
 }
 
@@ -329,10 +330,9 @@ void sys_close(int fd){
 struct file* get_file(int fd){
 
     struct thread* t = thread_current();
-    struct file* my_file = NULL;
 
     // go throught open files in that thread and return fd if founded
-    for (struct list_elem* e = list_begin (&t->filesList); e != list_end (&t->filesList);
+    for (struct list_elem* e = list_begin (&t->files_list); e != list_end (&t->files_list);
     e = list_next (e))
     {
       struct file* opened_file = list_entry (e, struct file, elem);
